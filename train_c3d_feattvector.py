@@ -16,7 +16,7 @@ from dataloaders.dataset_endocv import EndoscopyVideoDataset  # Đảm bảo fil
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print("Device being used:", device)
 
-nEpochs = 100  # Số epoch huấn luyện
+nEpochs = 50  # Số epoch huấn luyện
 resume_epoch = 0  # Bắt đầu từ 0 hoặc tiếp tục
 useTest = True  # Đánh giá trên tập test
 nTestInterval = 20  # Đánh giá test mỗi 20 epoch
@@ -41,7 +41,7 @@ saveName = modelName + '-' + dataset
 def train_model(dataset=dataset, save_dir=save_dir, lr=lr, num_epochs=nEpochs, 
                 save_epoch=snapshot, useTest=useTest, test_interval=nTestInterval):
     # Khởi tạo model
-    model = C3D(pretrained=True)  # Dùng pretrained nếu có
+    model = C3D(pretrained=False)  # Dùng pretrained nếu có
     train_params = model.parameters()  # Huấn luyện tất cả tham số
 
     # Loss và optimizer
@@ -66,12 +66,12 @@ def train_model(dataset=dataset, save_dir=save_dir, lr=lr, num_epochs=nEpochs,
     writer = SummaryWriter(log_dir=log_dir)
 
     print(f'Training model on {dataset} dataset...')
-    train_dataloader = DataLoader(EndoscopyVideoDataset(root_dir=f'endoscopy_data', split='train', clip_len=16), 
-                                 batch_size=20, shuffle=True, num_workers=4)
-    val_dataloader = DataLoader(EndoscopyVideoDataset(root_dir=f'endoscopy_data', split='val', clip_len=16), 
-                               batch_size=20, num_workers=4)
-    test_dataloader = DataLoader(EndoscopyVideoDataset(root_dir=f'endoscopy_data', split='test', clip_len=16), 
-                                batch_size=20, num_workers=4)
+    train_dataloader = DataLoader(EndoscopyVideoDataset(root_dir=f'endoc3d_data', split='train', clip_len=16), 
+                                 batch_size=20, shuffle=True, num_workers=2)  # Giảm num_workers xuống 2
+    val_dataloader = DataLoader(EndoscopyVideoDataset(root_dir=f'endoc3d_data', split='val', clip_len=16), 
+                               batch_size=20, num_workers=2)  # Giảm num_workers xuống 2
+    test_dataloader = DataLoader(EndoscopyVideoDataset(root_dir=f'endoc3d_data', split='test', clip_len=16), 
+                                batch_size=20, num_workers=2)  # Giảm num_workers xuống 2
 
     trainval_loaders = {'train': train_dataloader, 'val': val_dataloader}
     trainval_sizes = {x: len(trainval_loaders[x].dataset) for x in ['train', 'val']}
@@ -83,7 +83,6 @@ def train_model(dataset=dataset, save_dir=save_dir, lr=lr, num_epochs=nEpochs,
             running_loss = 0.0
 
             if phase == 'train':
-                scheduler.step()
                 model.train()
             else:
                 model.eval()
@@ -109,6 +108,7 @@ def train_model(dataset=dataset, save_dir=save_dir, lr=lr, num_epochs=nEpochs,
                 if phase == 'train':
                     loss.backward()
                     optimizer.step()
+                    scheduler.step()  # Di chuyển scheduler.step() xuống sau optimizer.step()
 
                 running_loss += loss.item() * anchor.size(0)
 

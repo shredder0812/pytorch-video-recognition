@@ -6,20 +6,6 @@ from torch.utils.data import Dataset, DataLoader
 import random
 from collections import defaultdict
 
-""" Dataset structure for endoscopy videos:
-endoscopy_data/
-  train/
-    video1.mp4
-    video1_label.txt
-    video2.mp4
-    video2_label.txt
-  val/
-    ...
-  test/
-    ...
-
-"""
-
 class EndoscopyVideoDataset(Dataset):
     r"""A Dataset for endoscopy videos where each video is a 16-frame sequence.
     Labels are stored in separate .txt files with suffix '_label.txt'.
@@ -38,20 +24,20 @@ class EndoscopyVideoDataset(Dataset):
         self.crop_size = 112
 
         # Load video and label files
-        self.videos, self.id_to_videos = self.load_videos_and_labels()
+        self.videos, self.name_to_videos = self.load_videos_and_labels()
         print(f'Number of {split} videos: {len(self.videos)}')
 
     def load_videos_and_labels(self):
-        """Load video files and group by track ID from label files."""
+        """Load video files and group by video name prefix (e.g., UTDD_230320BVK020)."""
         folder = os.path.join(self.root_dir, self.split)
         if not os.path.exists(folder):
             raise RuntimeError(f"Folder {folder} not found.")
 
         videos = []  # List of (video_path, track_id)
-        id_to_videos = defaultdict(list)  # {track_id: [video_paths]}
+        name_to_videos = defaultdict(list)  # {video_name_prefix: [video_paths]}
 
         for fname in sorted(os.listdir(folder)):
-            if fname.endswith('.mp4'):  # Chỉ xử lý file video
+            if fname.endswith('.mp4'):
                 video_path = os.path.join(folder, fname)
                 label_file = os.path.join(folder, f"{fname[:-4]}_label.txt")
                 if not os.path.exists(label_file):
@@ -59,12 +45,14 @@ class EndoscopyVideoDataset(Dataset):
                     continue
                 
                 with open(label_file, 'r') as f:
-                    track_id = int(f.read().strip())  # Giả định file chứa 1 số nguyên là track_id
+                    track_id = int(f.read().strip())
                 
+                # Trích xuất phần tên video (ví dụ: UTDD_230320BVK020)
+                video_name_prefix = ''.join(os.path.basename(video_path).split('')[1:3])
                 videos.append((video_path, track_id))
-                id_to_videos[track_id].append(video_path)
+                name_to_videos[video_name_prefix].append(video_path)
 
-        return videos, id_to_videos
+        return videos, name_to_videos
 
     def __len__(self):
         return len(self.videos)
@@ -75,15 +63,21 @@ class EndoscopyVideoDataset(Dataset):
         anchor_path, anchor_id = self.videos[index]
         anchor = self.load_clip(anchor_path)
 
-        # Get positive clip (from same track_id)
-        positive_path = random.choice([p for p in self.id_to_videos[anchor_id] if p != anchor_path])
-        if not positive_path:  # Nếu không có video khác, dùng lại anchor
-            positive_path = anchor_path
+        # Trích xuất video name prefix của anchor
+        anchor_name_prefix = ''.join(os.path.basename(anchor_path).split('')[1:3])
+
+        # Get positive clip (cùng video name prefix)
+        positive_candidates = [p for p in self.name_to_videos[anchor_name_prefix] if p != anchor_path]
+        positive_path = random.choice(positive_candidates) if positive_candidates else anchor_path
         positive = self.load_clip(positive_path)
 
-        # Get negative clip (from different track_id)
-        negative_id = random.choice([id_ for id_ in self.id_to_videos.keys() if id_ != anchor_id])
-        negative_path = random.choice(self.id_to_videos[negative_id])
+        # Get negative clip (khác video name prefix)
+        negative_name_prefixes = [name for name in self.name_to_videos.keys() if name != anchor_name_prefix]
+        if not negative_name_prefixes:
+            negative_path = anchor_path
+        else:
+            negative_name_prefix = random.choice(negative_name_prefixes)
+            negative_path = random.choice(self.name_to_videos[negative_name_prefix])
         negative = self.load_clip(negative_path)
 
         # Apply augmentation and normalization
@@ -112,37 +106,41 @@ class EndoscopyVideoDataset(Dataset):
             if not ret:
                 break
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame = cv2.resize(frame, (self.crop_size, self.crop_size))  # Resize toàn bộ frame
-            frame = torch.tensor(frame).permute(2, 0, 1).float() / 255.0
+            frame = cv2.resize(frame, (self.crop_size, self.crop_size))
+            frame = torch.tensor(frame).permute(2, 0, 1).float() / 255.0  # [3, 112, 112]
             frames.append(frame)
         
         cap.release()
         if len(frames) < self.clip_len:
-            frames.extend([frames[-1]] * (self.clip_len - len(frames)))  # Pad nếu thiếu
+            frames.extend([frames[-1]] * (self.clip_len - len(frames)))
         
-        return torch.stack(frames).unsqueeze(0)  # [1, 3, 16, 112, 112]
+        clip = torch.stack(frames)  # [16, 3, 112, 112]
+        clip = clip.permute(1, 0, 2, 3)  # [3, 16, 112, 112]
+        return clip
 
     def randomflip(self, buffer):
         """Horizontally flip the clip randomly with a probability of 0.5."""
         if np.random.random() < 0.5:
-            for i in range(buffer.shape[1]):  # Iterate over frames
-                buffer[:, i] = torch.flip(buffer[:, i], dims=[2])  # Flip horizontally
+            for i in range(buffer.shape[1]):  # Iterate over frames (dimension 1)
+                buffer[:, i] = torch.flip(buffer[:, i], dims=[2])  # Flip horizontally (dimension 3)
         return buffer
 
     def normalize(self, buffer):
-        """Normalize the clip (optional, adjust based on pretrained C3D requirements)."""
+        """Normalize the clip."""
         mean = torch.tensor([90.0, 98.0, 102.0]).view(3, 1, 1, 1)
-        buffer -= mean  # Subtract mean
+        if buffer.shape[0] != 3:  # Kiểm tra số kênh (chiều 0 sau khi bỏ batch dim)
+            raise RuntimeError(f"Expected buffer to have 3 channels, got shape {buffer.shape}")
+        buffer -= mean
         return buffer
 
 if __name__ == "__main__":
     # Example usage
     train_data = EndoscopyVideoDataset(
-        root_dir='endoscopy_data',
+        root_dir='endoc3d_data',
         split='train',
         clip_len=16
     )
-    train_loader = DataLoader(train_data, batch_size=20, shuffle=True, num_workers=4)
+    train_loader = DataLoader(train_data, batch_size=20, shuffle=True, num_workers=2)
 
     for i, (anchor, positive, negative) in enumerate(train_loader):
         print(f"Anchor size: {anchor.size()}")

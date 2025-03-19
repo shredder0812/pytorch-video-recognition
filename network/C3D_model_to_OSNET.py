@@ -35,7 +35,7 @@ class C3D(nn.Module):
         x = self.global_pool(x)  # (B, C, 1, 1, 1)
         x = x.view(x.size(0), -1)  # (B, C)
         x = self.fc6(x)
-        return x, feature_map
+        return x
 
     def __load_pretrained_weights(self):
         """Initialiaze network."""
