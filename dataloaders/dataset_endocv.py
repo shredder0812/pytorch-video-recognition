@@ -48,7 +48,7 @@ class EndoscopyVideoDataset(Dataset):
                     track_id = int(f.read().strip())
                 
                 # Trích xuất phần tên video (ví dụ: UTDD_230320BVK020)
-                video_name_prefix = ''.join(os.path.basename(video_path).split('')[1:3])
+                video_name_prefix = '_'.join(os.path.basename(video_path).split('_')[1:3])
                 videos.append((video_path, track_id))
                 name_to_videos[video_name_prefix].append(video_path)
 
@@ -64,7 +64,7 @@ class EndoscopyVideoDataset(Dataset):
         anchor = self.load_clip(anchor_path)
 
         # Trích xuất video name prefix của anchor
-        anchor_name_prefix = ''.join(os.path.basename(anchor_path).split('')[1:3])
+        anchor_name_prefix = '_'.join(os.path.basename(anchor_path).split('_')[1:3])
 
         # Get positive clip (cùng video name prefix)
         positive_candidates = [p for p in self.name_to_videos[anchor_name_prefix] if p != anchor_path]

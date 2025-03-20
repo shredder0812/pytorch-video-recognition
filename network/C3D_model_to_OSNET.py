@@ -18,6 +18,7 @@ class C3D(nn.Module):
         self.global_pool = nn.AdaptiveAvgPool3d((1, 1, 1))  # (B, C, 1, 1, 1)
         self.fc6 = nn.Linear(256, 256)  # Match OSNet feature size
         
+        self.dropout = nn.Dropout(p=0.5)  # Thêm dropout
         
         
         self.__init_weight()

@@ -47,7 +47,7 @@ def train_model(dataset=dataset, save_dir=save_dir, lr=lr, num_epochs=nEpochs,
     # Loss và optimizer
     criterion = nn.TripletMarginLoss(margin=1.0)
     optimizer = optim.SGD(train_params, lr=lr, momentum=0.9, weight_decay=5e-4)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True) # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 
     if resume_epoch == 0:
         print(f"Training {modelName} from scratch...")
@@ -108,13 +108,18 @@ def train_model(dataset=dataset, save_dir=save_dir, lr=lr, num_epochs=nEpochs,
                 if phase == 'train':
                     loss.backward()
                     optimizer.step()
-                    scheduler.step()  # Di chuyển scheduler.step() xuống sau optimizer.step()
+                    # scheduler.step()  # Di chuyển scheduler.step() xuống sau optimizer.step()
 
                 running_loss += loss.item() * anchor.size(0)
 
             epoch_loss = running_loss / trainval_sizes[phase]
             writer.add_scalar(f'data/{phase}_loss_epoch', epoch_loss, epoch)
             print(f"[{phase}] Epoch: {epoch+1}/{num_epochs} Loss: {epoch_loss}")
+            
+            if phase == 'val':
+                scheduler.step(epoch_loss)
+            
+            
             stop_time = timeit.default_timer()
             print(f"Execution time: {stop_time - start_time}\n")
 
