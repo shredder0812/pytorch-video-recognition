@@ -24,17 +24,18 @@ class EndoscopyVideoDataset(Dataset):
         self.crop_size = 112
 
         # Load video and label files
-        self.videos, self.name_to_videos = self.load_videos_and_labels()
+        self.videos, self.id_to_videos, self.name_to_videos = self.load_videos_and_labels()
         print(f'Number of {split} videos: {len(self.videos)}')
 
     def load_videos_and_labels(self):
-        """Load video files and group by video name prefix (e.g., UTDD_230320BVK020)."""
+        """Load video files and group by track_id and video name prefix."""
         folder = os.path.join(self.root_dir, self.split)
         if not os.path.exists(folder):
             raise RuntimeError(f"Folder {folder} not found.")
 
-        videos = []  # List of (video_path, track_id)
-        name_to_videos = defaultdict(list)  # {video_name_prefix: [video_paths]}
+        videos = []  # List of (video_path, track_id, name_prefix)
+        id_to_videos = defaultdict(list)  # {track_id: [video_paths]}
+        name_to_videos = defaultdict(list)  # {name_prefix: [video_paths]}
 
         for fname in sorted(os.listdir(folder)):
             if fname.endswith('.mp4'):
@@ -45,14 +46,16 @@ class EndoscopyVideoDataset(Dataset):
                     continue
                 
                 with open(label_file, 'r') as f:
-                    track_id = int(f.read().strip())
+                    track_id = int(f.read().strip())  # Đọc track_id từ file label
                 
-                # Trích xuất phần tên video (ví dụ: UTDD_230320BVK020)
-                video_name_prefix = '_'.join(os.path.basename(video_path).split('_')[1:3])
-                videos.append((video_path, track_id))
-                name_to_videos[video_name_prefix].append(video_path)
+                # Lấy name_prefix từ tên file (ví dụ: UTDD_230320BVK020)
+                name_prefix = '_'.join(fname.split('_')[1:3])  # Lấy phần UTDD_230320BVK020
 
-        return videos, name_to_videos
+                videos.append((video_path, track_id, name_prefix))
+                id_to_videos[track_id].append(video_path)
+                name_to_videos[name_prefix].append(video_path)
+
+        return videos, id_to_videos, name_to_videos
 
     def __len__(self):
         return len(self.videos)
@@ -60,24 +63,28 @@ class EndoscopyVideoDataset(Dataset):
     def __getitem__(self, index):
         """Return a triplet (anchor, positive, negative) of clips."""
         # Get anchor clip
-        anchor_path, anchor_id = self.videos[index]
+        anchor_path, anchor_id, anchor_name_prefix = self.videos[index]
         anchor = self.load_clip(anchor_path)
 
-        # Trích xuất video name prefix của anchor
-        anchor_name_prefix = '_'.join(os.path.basename(anchor_path).split('_')[1:3])
-
-        # Get positive clip (cùng video name prefix)
-        positive_candidates = [p for p in self.name_to_videos[anchor_name_prefix] if p != anchor_path]
+        # Get positive clip (cùng track_id)
+        positive_candidates = [p for p in self.id_to_videos[anchor_id] if p != anchor_path]
         positive_path = random.choice(positive_candidates) if positive_candidates else anchor_path
         positive = self.load_clip(positive_path)
 
-        # Get negative clip (khác video name prefix)
-        negative_name_prefixes = [name for name in self.name_to_videos.keys() if name != anchor_name_prefix]
-        if not negative_name_prefixes:
+        # Get negative clip (khác track_id và khác name_prefix)
+        negative_ids = [id_ for id_ in self.id_to_videos.keys() if id_ != anchor_id]
+        negative_candidates = []
+        for neg_id in negative_ids:
+            for path in self.id_to_videos[neg_id]:
+                name_prefix = '_'.join(os.path.basename(path).split('_')[1:3])
+                if name_prefix != anchor_name_prefix:  # Khác name_prefix
+                    negative_candidates.append(path)
+
+        if not negative_candidates:
+            # Nếu không tìm thấy negative thỏa mãn, dùng lại anchor (không lý tưởng)
             negative_path = anchor_path
         else:
-            negative_name_prefix = random.choice(negative_name_prefixes)
-            negative_path = random.choice(self.name_to_videos[negative_name_prefix])
+            negative_path = random.choice(negative_candidates)
         negative = self.load_clip(negative_path)
 
         # Apply augmentation and normalization
@@ -128,7 +135,7 @@ class EndoscopyVideoDataset(Dataset):
     def normalize(self, buffer):
         """Normalize the clip."""
         mean = torch.tensor([90.0, 98.0, 102.0]).view(3, 1, 1, 1)
-        if buffer.shape[0] != 3:  # Kiểm tra số kênh (chiều 0 sau khi bỏ batch dim)
+        if buffer.shape[0] != 3:
             raise RuntimeError(f"Expected buffer to have 3 channels, got shape {buffer.shape}")
         buffer -= mean
         return buffer

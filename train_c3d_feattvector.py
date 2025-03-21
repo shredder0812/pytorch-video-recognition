@@ -19,9 +19,9 @@ print("Device being used:", device)
 nEpochs = 50  # Số epoch huấn luyện
 resume_epoch = 0  # Bắt đầu từ 0 hoặc tiếp tục
 useTest = True  # Đánh giá trên tập test
-nTestInterval = 20  # Đánh giá test mỗi 20 epoch
-snapshot = 50  # Lưu model mỗi 50 epoch
-lr = 1e-3  # Learning rate
+nTestInterval = 10  # Đánh giá test mỗi 20 epoch
+snapshot = 10  # Lưu model mỗi 50 epoch
+lr = 1e-4  # Learning rate
 
 dataset = 'endocv'  # Tên dataset
 save_dir_root = os.path.join(os.path.dirname(os.path.abspath(__file__)))
@@ -46,7 +46,7 @@ def train_model(dataset=dataset, save_dir=save_dir, lr=lr, num_epochs=nEpochs,
 
     # Loss và optimizer
     criterion = nn.TripletMarginLoss(margin=1.0)
-    optimizer = optim.SGD(train_params, lr=lr, momentum=0.9, weight_decay=5e-4)
+    optimizer = optim.Adam(train_params, lr=lr, weight_decay=5e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True) # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 
     if resume_epoch == 0:

@@ -43,8 +43,8 @@ def process_tracking_data(vid_root, track_root, output_root, clip_len=16):
             print(f"No matching video found for {track_dir} in {vid_folder}, skipping.")
             continue
 
-        # Đọc file mot_result_fix.txt
-        track_file = os.path.join(track_root, track_dir, 'mot_result_fix.txt')
+        # Đọc file mot_result.txt
+        track_file = os.path.join(track_root, track_dir, 'mot_result.txt')
         if not os.path.exists(track_file):
             print(f"Tracking file {track_file} not found, skipping.")
             continue
@@ -70,12 +70,52 @@ def process_tracking_data(vid_root, track_root, output_root, clip_len=16):
         frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         print(f"Video {vid_path}: {frame_width}x{frame_height}, FPS: {fps}")
 
+        # Sắp xếp các track theo obj_id và frame_id
+        track_list = []
         for obj_id, frames in tracks.items():
-            frames.sort()
-            print(f"Track {obj_id} has {len(frames)} frames.")
+            frames.sort(key=lambda x: x[0])  # Sắp xếp theo frame_id
+            track_list.append((obj_id, frames))
+        track_list.sort(key=lambda x: (x[0], x[1][0][0]))  # Sắp xếp theo obj_id và frame đầu tiên
+
+        # Gộp các track không đủ 16 frame với track gần nhất trước đó
+        merged_tracks = []
+        current_track = None
+        for obj_id, frames in track_list:
+            if len(frames) < clip_len:
+                print(f"Track {obj_id} has {len(frames)} frames, merging with previous track.")
+                if current_track is None:
+                    # Nếu không có track trước đó, lưu track hiện tại để gộp với track tiếp theo
+                    current_track = (obj_id, frames)
+                    continue
+                # Gộp với track trước đó
+                prev_obj_id, prev_frames = current_track
+                prev_frames.extend(frames)
+                print(f"Merged track {obj_id} into track {prev_obj_id}, new length: {len(prev_frames)}")
+                current_track = (prev_obj_id, prev_frames)
+            else:
+                if current_track is not None:
+                    merged_tracks.append(current_track)
+                current_track = (obj_id, frames)
+
+        # Thêm track cuối cùng (nếu có)
+        if current_track is not None:
+            merged_tracks.append(current_track)
+
+        # Xử lý các track đã gộp để tạo clip
+        for obj_id, frames in merged_tracks:
+            frames.sort(key=lambda x: x[0])  # Sắp xếp lại theo frame_id
+            print(f"Processing merged track {obj_id} with {len(frames)} frames.")
+
+            # Chỉ tạo clip nếu track có đủ 16 frame
+            if len(frames) < clip_len:
+                print(f"Merged track {obj_id} still has only {len(frames)} frames, skipping.")
+                continue
+
             for start_idx in range(0, len(frames) - clip_len + 1, clip_len):
                 clip_frames = frames[start_idx:start_idx + clip_len]
                 frame_ids = [f[0] for f in clip_frames]
+
+                # Kiểm tra nếu clip không đủ frame liên tiếp hoặc có frame trùng lặp
                 if len(set(frame_ids)) != clip_len:
                     print(f"Clip at start {frame_ids[0]} skipped due to duplicate frames.")
                     continue
@@ -90,6 +130,7 @@ def process_tracking_data(vid_root, track_root, output_root, clip_len=16):
                 clip_path = os.path.join(output_root, 'temp', f"{clip_name}.mp4")
                 label_path = os.path.join(output_root, 'temp', f"{clip_name}_label.txt")
 
+                # Tạo video clip
                 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
                 out = cv2.VideoWriter(clip_path, fourcc, fps, (112, 112))
                 for frame_id, x1, y1, x2, y2 in clip_frames:
@@ -105,6 +146,7 @@ def process_tracking_data(vid_root, track_root, output_root, clip_len=16):
                     out.write(crop)
                 out.release()
 
+                # Lưu label (obj_id)
                 with open(label_path, 'w') as f:
                     f.write(str(obj_id))
 
@@ -116,9 +158,11 @@ def process_tracking_data(vid_root, track_root, output_root, clip_len=16):
         print("No clips were generated. Check video files and tracking data.")
         return
 
+    # Chia dữ liệu thành train/val/test
     train_clips, test_clips = train_test_split(all_clips, test_size=0.3, random_state=42)
     val_clips, test_clips = train_test_split(test_clips, test_size=0.5, random_state=42)
 
+    # Di chuyển các clip vào thư mục tương ứng
     for split, clips in [('train', train_clips), ('val', val_clips), ('test', test_clips)]:
         for clip_path, label_path in clips:
             dest_clip_path = os.path.join(output_root, split, os.path.basename(clip_path))
@@ -138,5 +182,5 @@ def process_tracking_data(vid_root, track_root, output_root, clip_len=16):
 if __name__ == "__main__":
     vid_root = 'vid_endocv'
     track_root = 'vid_track'
-    output_root = 'endoc3d_data'  # Sửa tên output_root thành endoc3d_data
+    output_root = 'endoc3d_data'
     process_tracking_data(vid_root, track_root, output_root, clip_len=16)
