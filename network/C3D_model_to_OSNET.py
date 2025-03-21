@@ -1,40 +1,39 @@
 import torch
 import torch.nn as nn
-from mypath import Path
 
 # ================== 1. Define C3D ==================
 class C3D(nn.Module):
     def __init__(self, pretrained=False):
         super(C3D, self).__init__()
         self.conv1 = nn.Conv3d(3, 64, kernel_size=(3, 3, 3), stride=1, padding=1)
+        self.bn1 = nn.BatchNorm3d(64)  # Thêm BatchNorm
         self.pool1 = nn.MaxPool3d(kernel_size=(1, 2, 2), stride=(1, 2, 2))
         self.conv2 = nn.Conv3d(64, 128, kernel_size=(3, 3, 3), stride=1, padding=1)
+        self.bn2 = nn.BatchNorm3d(128)  # Thêm BatchNorm
         self.pool2 = nn.MaxPool3d(kernel_size=(2, 2, 2), stride=(2, 2, 2))
         self.conv3a = nn.Conv3d(128, 256, kernel_size=(3, 3, 3), stride=1, padding=1)
+        self.bn3a = nn.BatchNorm3d(256)  # Thêm BatchNorm
         self.conv3b = nn.Conv3d(256, 256, kernel_size=(3, 3, 3), stride=1, padding=1)
+        self.bn3b = nn.BatchNorm3d(256)  # Thêm BatchNorm
         self.pool3 = nn.MaxPool3d(kernel_size=(2, 2, 2), stride=(2, 2, 2))
         
-        # Adaptive Pooling
-        self.global_pool = nn.AdaptiveAvgPool3d((1, 1, 1))  # (B, C, 1, 1, 1)
-        self.fc6 = nn.Linear(256, 256)  # Match OSNet feature size
-        
-        self.dropout = nn.Dropout(p=0.5)  # Thêm dropout
-        
+        self.global_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
+        self.fc6 = nn.Linear(256, 256)  # Tăng kích thước embedding
+        self.dropout = nn.Dropout(p=0.5)
         
         self.__init_weight()
-
         if pretrained:
             self.__load_pretrained_weights()
-        
 
     def forward(self, x):
-        x = self.pool1(torch.relu(self.conv1(x)))
-        x = self.pool2(torch.relu(self.conv2(x)))
-        x = self.pool3(torch.relu(self.conv3b(torch.relu(self.conv3a(x)))))
+        x = self.pool1(torch.relu(self.bn1(self.conv1(x))))
+        x = self.pool2(torch.relu(self.bn2(self.conv2(x))))
+        x = torch.relu(self.bn3a(self.conv3a(x)))
+        x = self.pool3(torch.relu(self.bn3b(self.conv3b(x))))
         
-        feature_map = x
-        x = self.global_pool(x)  # (B, C, 1, 1, 1)
-        x = x.view(x.size(0), -1)  # (B, C)
+        x = self.global_pool(x)
+        x = x.view(x.size(0), -1)
+        x = self.dropout(x)
         x = self.fc6(x)
         return x
 

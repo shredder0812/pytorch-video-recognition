@@ -77,10 +77,13 @@ def train_model(dataset=dataset, save_dir=save_dir, lr=lr, num_epochs=nEpochs,
     trainval_sizes = {x: len(trainval_loaders[x].dataset) for x in ['train', 'val']}
     test_size = len(test_dataloader.dataset)
 
+    # Trong train_c3d_feattvector.py
     for epoch in range(resume_epoch, num_epochs):
         for phase in ['train', 'val']:
             start_time = timeit.default_timer()
             running_loss = 0.0
+            running_ap_dist = 0.0  # Khoảng cách anchor-positive
+            running_an_dist = 0.0  # Khoảng cách anchor-negative
 
             if phase == 'train':
                 model.train()
@@ -105,21 +108,30 @@ def train_model(dataset=dataset, save_dir=save_dir, lr=lr, num_epochs=nEpochs,
 
                 loss = criterion(anchor_feat, positive_feat, negative_feat)
 
+                # Tính khoảng cách
+                ap_dist = torch.nn.functional.pairwise_distance(anchor_feat, positive_feat).mean()
+                an_dist = torch.nn.functional.pairwise_distance(anchor_feat, negative_feat).mean()
+
                 if phase == 'train':
                     loss.backward()
                     optimizer.step()
-                    # scheduler.step()  # Di chuyển scheduler.step() xuống sau optimizer.step()
 
                 running_loss += loss.item() * anchor.size(0)
+                running_ap_dist += ap_dist.item() * anchor.size(0)
+                running_an_dist += an_dist.item() * anchor.size(0)
 
             epoch_loss = running_loss / trainval_sizes[phase]
+            epoch_ap_dist = running_ap_dist / trainval_sizes[phase]
+            epoch_an_dist = running_an_dist / trainval_sizes[phase]
+
             writer.add_scalar(f'data/{phase}_loss_epoch', epoch_loss, epoch)
-            print(f"[{phase}] Epoch: {epoch+1}/{num_epochs} Loss: {epoch_loss}")
-            
+            writer.add_scalar(f'data/{phase}_ap_dist', epoch_ap_dist, epoch)
+            writer.add_scalar(f'data/{phase}_an_dist', epoch_an_dist, epoch)
+            print(f"[{phase}] Epoch: {epoch+1}/{num_epochs} Loss: {epoch_loss}, AP Dist: {epoch_ap_dist}, AN Dist: {epoch_an_dist}")
+
             if phase == 'val':
                 scheduler.step(epoch_loss)
-            
-            
+
             stop_time = timeit.default_timer()
             print(f"Execution time: {stop_time - start_time}\n")
 
