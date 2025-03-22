@@ -45,7 +45,7 @@ def train_model(dataset=dataset, save_dir=save_dir, lr=lr, num_epochs=nEpochs,
     train_params = model.parameters()  # Huấn luyện tất cả tham số
 
     # Loss và optimizer
-    criterion = nn.TripletMarginLoss(margin=1.0)
+    criterion = nn.TripletMarginLoss(margin=0.5)
     optimizer = optim.Adam(train_params, lr=lr, weight_decay=5e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True) # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 
@@ -67,11 +67,11 @@ def train_model(dataset=dataset, save_dir=save_dir, lr=lr, num_epochs=nEpochs,
 
     print(f'Training model on {dataset} dataset...')
     train_dataloader = DataLoader(EndoscopyVideoDataset(root_dir=f'endoc3d_data', split='train', clip_len=16), 
-                                 batch_size=20, shuffle=True, num_workers=2)  # Giảm num_workers xuống 2
+                                 batch_size=10, shuffle=True, num_workers=2)  # Giảm num_workers xuống 2
     val_dataloader = DataLoader(EndoscopyVideoDataset(root_dir=f'endoc3d_data', split='val', clip_len=16), 
-                               batch_size=20, num_workers=2)  # Giảm num_workers xuống 2
+                               batch_size=10, num_workers=2)  # Giảm num_workers xuống 2
     test_dataloader = DataLoader(EndoscopyVideoDataset(root_dir=f'endoc3d_data', split='test', clip_len=16), 
-                                batch_size=20, num_workers=2)  # Giảm num_workers xuống 2
+                                batch_size=10, num_workers=2)  # Giảm num_workers xuống 2
 
     trainval_loaders = {'train': train_dataloader, 'val': val_dataloader}
     trainval_sizes = {x: len(trainval_loaders[x].dataset) for x in ['train', 'val']}

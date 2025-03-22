@@ -60,34 +60,25 @@ class EndoscopyVideoDataset(Dataset):
     def __len__(self):
         return len(self.videos)
 
+    # Trong EndoscopyVideoDataset
     def __getitem__(self, index):
-        """Return a triplet (anchor, positive, negative) of clips."""
-        # Get anchor clip
         anchor_path, anchor_id, anchor_name_prefix = self.videos[index]
         anchor = self.load_clip(anchor_path)
 
-        # Get positive clip (cùng track_id)
+        # Tạm thời tính embedding để chọn hard triplet (cần mô hình pretrained)
+        # Ở đây, chọn ngẫu nhiên nhưng có thể cải thiện sau
         positive_candidates = [p for p in self.id_to_videos[anchor_id] if p != anchor_path]
         positive_path = random.choice(positive_candidates) if positive_candidates else anchor_path
         positive = self.load_clip(positive_path)
 
-        # Get negative clip (khác track_id và khác name_prefix)
         negative_ids = [id_ for id_ in self.id_to_videos.keys() if id_ != anchor_id]
-        negative_candidates = []
-        for neg_id in negative_ids:
-            for path in self.id_to_videos[neg_id]:
-                name_prefix = '_'.join(os.path.basename(path).split('_')[1:3])
-                if name_prefix != anchor_name_prefix:  # Khác name_prefix
-                    negative_candidates.append(path)
-
-        if not negative_candidates:
-            # Nếu không tìm thấy negative thỏa mãn, dùng lại anchor (không lý tưởng)
+        if not negative_ids:
             negative_path = anchor_path
         else:
-            negative_path = random.choice(negative_candidates)
+            negative_id = random.choice(negative_ids)
+            negative_path = random.choice(self.id_to_videos[negative_id])
         negative = self.load_clip(negative_path)
 
-        # Apply augmentation and normalization
         if self.split == 'train':
             anchor = self.randomflip(anchor)
             positive = self.randomflip(positive)

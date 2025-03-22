@@ -57,7 +57,7 @@ class C3D(nn.Module):
                         "classifier.0.bias": "fc6.bias"
                         }
 
-        p_dict = torch.load(Path.model_dir())
+        p_dict = torch.load('c3d-pretrained.pth')
         s_dict = self.state_dict()
         for name in p_dict:
             if name not in corresp_name:
